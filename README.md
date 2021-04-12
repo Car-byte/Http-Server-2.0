@@ -1,5 +1,5 @@
 # Http-Server-2.0
-This is the second itteration of my http server
+This is the second itteration of my http server for windows
 
 This server supports way more features thatn the first one such as keep alive
 
