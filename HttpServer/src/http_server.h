@@ -35,6 +35,9 @@ public:
 
 private:
 
+	//could move most of these functions to another header because lots of them
+	//dont use any member data / functions
+
 	void CopyPort(const char* port);
 	void LoadWinSockDll();
 
@@ -63,6 +66,8 @@ private:
 
 	void ConstructGetResponse(std::string& response, std::string& content_type, std::string& file_contents, bool keep_alive);
 
+	void ConstructPostResponse(std::string& response, std::string& content_type, std::string& file_contents, bool keep_alive);
+
 	int ReadFile(std::string& file_contents, const std::string& file_path);
 
 	void GetMethod(std::string& method, std::string_view& http_request);
@@ -70,6 +75,8 @@ private:
 	void DecodeUri(std::string_view& uri, std::string& file_path, std::string& uri_contents);
 
 	void SeperateUri(std::string_view& request, std::string_view& uri, int start_index);
+
+	void DecodePostData(std::unordered_map<std::string, std::string>& decoded_data, std::string_view& uri);
 
 	void InitUriMap();
 

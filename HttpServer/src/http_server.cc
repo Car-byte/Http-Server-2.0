@@ -80,6 +80,7 @@ HttpServer::HttpServer(const char* port) {
 //https://www.urlencoder.io/learn/
 //finish adding all the strings
 void HttpServer::InitUriMap() {
+
 	m_uri_map["%20"] = ' '; m_uri_map["%21"] = '!';
 	m_uri_map["%22"] = '"'; m_uri_map["%23"] = '#';
 	m_uri_map["%24"] = '$'; m_uri_map["%25"] = '%';
@@ -272,7 +273,12 @@ void HttpServer::ParseRequest(SOCKET request_socket) {
 		//fulfill request
 		SendToProperMethodFunction(http_response, http_request_view, !request_ended);
 
+
+
 		//set socket to blocking for send
+		//blocking send waits till the data is sent to return 
+		//non-blocking send waits till data is copied to buffer
+		//blocking will take a bit longer to return thats fine because we wont get response from client untill we send
 		results = ioctlsocket(request_socket, FIONBIO, &blocking_setting);
 		if (results != 0) {
 			std::scoped_lock lock(m_console_mutex);
@@ -374,39 +380,8 @@ void HttpServer::SendToProperMethodFunction(std::string& response, std::string_v
 
 
 
-void HttpServer::HandleGetRequest(std::string& response, std::string_view& request, bool keep_alive) {
-
-	std::string request_file_path;
-	request_file_path.reserve(100);
-	std::string file_contents;
-	std::string uri_data;
-	std::string_view uri;
-	
-	//4 is start index because GET is 3 characters
-	SeperateUri(request, uri, 4);
-
-	DecodeUri(uri, request_file_path, uri_data);
-
-	int response_code = ReadFile(file_contents, request_file_path);
-
-	std::string content_type;
-
-	if (response_code == 404) {
-		std::string file = "404.html";
-		content_type = GetContentType(file);
-	}
-	else {
-		content_type = GetContentType(request_file_path);
-	}
-
-	ConstructGetResponse(response, content_type, file_contents, keep_alive);
-}
-
-
-
 void HttpServer:: SeperateUri(std::string_view& http_request, std::string_view& uri, int start_index) {
 
-	int last_index = 0;
 	int i = start_index;
 
 	while (http_request[i] != '\0' && http_request[i] != ' ') {
@@ -469,71 +444,6 @@ void HttpServer::DecodeUri(std::string_view& uri, std::string& file_path, std::s
 
 		}
 	}
-
-}
-
-
-
-void HttpServer::ConstructGetResponse(std::string& response, std::string& content_type, std::string& file_contents, bool keep_alive) {
-
-	int64_t size_of_full_message = 0;
-	size_of_full_message += m_http_header_parts.m_http_version.size();
-	size_of_full_message += 1; //space
-	size_of_full_message += m_http_header_parts.m_200_ok.size();
-	size_of_full_message += 1; //end line
-	size_of_full_message += m_http_header_parts.m_server_name.size();
-	size_of_full_message += 1; //end line
-
-	if (keep_alive) {
-		size_of_full_message += m_http_header_parts.m_connection_keep_alive.size();
-		size_of_full_message += 1; //end line
-		size_of_full_message += m_http_header_parts.m_keep_alive_header_default.size();
-		size_of_full_message += 1; //end line
-	}
-	else {
-		size_of_full_message += m_http_header_parts.m_connection_close.size();
-		size_of_full_message += 1; //end line
-	}
-
-	size_of_full_message += m_http_header_parts.m_content_type_empty.size();
-	size_of_full_message += 1; //space
-	size_of_full_message += content_type.size();
-	size_of_full_message += 1; //end line
-	size_of_full_message += m_http_header_parts.m_content_length_empty.size();
-	size_of_full_message += 1; //space
-	size_of_full_message += std::to_string(file_contents.size()).size();
-	size_of_full_message += 2; //two end lines
-	size_of_full_message += file_contents.size();
-
-	response.reserve(size_of_full_message);
-
-	response += m_http_header_parts.m_http_version;
-	response += ' ';
-	response += m_http_header_parts.m_200_ok;
-	response += '\n';
-	response += m_http_header_parts.m_server_name;
-	response += '\n';
-
-	if (keep_alive) {
-		response += m_http_header_parts.m_connection_keep_alive;
-		response += '\n';
-		response += m_http_header_parts.m_keep_alive_header_default;
-		response += '\n'; //end line
-	}
-	else {
-		response += m_http_header_parts.m_connection_close;
-		response += '\n';
-	}
-
-	response += m_http_header_parts.m_content_type_empty;
-	response += ' ';
-	response += content_type;
-	response += '\n';
-	response += m_http_header_parts.m_content_length_empty;
-	response += ' ';
-	response += std::to_string(file_contents.size());
-	response += "\n\n";
-	response += file_contents;
 }
 
 
@@ -680,9 +590,63 @@ int HttpServer::ReadFile(std::string& file_contents, const std::string& file_pat
 }
 
 
+
+void HttpServer::HandleGetRequest(std::string& response, std::string_view& request, bool keep_alive) {
+
+	std::string request_file_path;
+	request_file_path.reserve(100);
+	std::string file_contents;
+	std::string uri_decoded;
+	std::string_view uri;
+
+	//4 is start index because GET is 3 characters
+	SeperateUri(request, uri, 4);
+
+	//decodes the uri havent done anything with it yet
+	DecodeUri(uri, request_file_path, uri_decoded);
+
+	int response_code = ReadFile(file_contents, request_file_path);
+
+	std::string content_type;
+
+	if (response_code == 404) {
+		std::string file = "404.html";
+		content_type = GetContentType(file);
+	}
+	else {
+		content_type = GetContentType(request_file_path);
+	}
+
+	ConstructGetResponse(response, content_type, file_contents, keep_alive);
+}
+
+
+
 //need to finsih implementing other methods
 void HttpServer::HandlePostRequest(std::string& response, std::string_view& request, bool keep_alive) {
 
+	std::unordered_map<std::string, std::string> post_data;
+	std::string request_file_path;
+	std::string file_contents;
+	std::string_view uri;
+	std::string content_type;
+
+	//post is 4 characters long and 1 space after
+	SeperateUri(request, uri, 5);
+
+	DecodePostData(post_data, request);
+
+	int response_code = ReadFile(file_contents, request_file_path);
+
+	if (response_code == 404) {
+		std::string file = "404.html";
+		content_type = GetContentType(file);
+	}
+	else {
+		content_type = GetContentType(request_file_path);
+	}
+
+	ConstructPostResponse(response, content_type, file_contents, keep_alive);
 }
 
 
@@ -764,5 +728,218 @@ void HttpServer::HandleUnknownRequest(std::string& response, std::string_view& r
 	}
 	else {
 		response += m_http_header_parts.m_connection_close;
+	}
+}
+
+
+
+void HttpServer::ConstructGetResponse(std::string& response, std::string& content_type, std::string& file_contents, bool keep_alive) {
+
+	int64_t size_of_full_message = 0;
+	size_of_full_message += m_http_header_parts.m_http_version.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += m_http_header_parts.m_200_ok.size();
+	size_of_full_message += 1; //end line
+	size_of_full_message += m_http_header_parts.m_server_name.size();
+	size_of_full_message += 1; //end line
+
+	if (keep_alive) {
+		size_of_full_message += m_http_header_parts.m_connection_keep_alive.size();
+		size_of_full_message += 1; //end line
+		size_of_full_message += m_http_header_parts.m_keep_alive_header_default.size();
+		size_of_full_message += 1; //end line
+	}
+	else {
+		size_of_full_message += m_http_header_parts.m_connection_close.size();
+		size_of_full_message += 1; //end line
+	}
+
+	size_of_full_message += m_http_header_parts.m_content_type_empty.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += content_type.size();
+	size_of_full_message += 1; //end line
+	size_of_full_message += m_http_header_parts.m_content_length_empty.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += std::to_string(file_contents.size()).size();
+	size_of_full_message += 2; //two end lines
+	size_of_full_message += file_contents.size();
+
+	response.reserve(size_of_full_message);
+
+	response += m_http_header_parts.m_http_version;
+	response += ' ';
+	response += m_http_header_parts.m_200_ok;
+	response += '\n';
+	response += m_http_header_parts.m_server_name;
+	response += '\n';
+
+	if (keep_alive) {
+		response += m_http_header_parts.m_connection_keep_alive;
+		response += '\n';
+		response += m_http_header_parts.m_keep_alive_header_default;
+		response += '\n'; //end line
+	}
+	else {
+		response += m_http_header_parts.m_connection_close;
+		response += '\n';
+	}
+
+	response += m_http_header_parts.m_content_type_empty;
+	response += ' ';
+	response += content_type;
+	response += '\n';
+	response += m_http_header_parts.m_content_length_empty;
+	response += ' ';
+	response += std::to_string(file_contents.size());
+	response += "\n\n";
+	response += file_contents;
+}
+
+
+
+void HttpServer::ConstructPostResponse(std::string& response, std::string& content_type, std::string& file_contents, bool keep_alive) {
+
+	int64_t size_of_full_message = 0;
+	size_of_full_message += m_http_header_parts.m_http_version.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += m_http_header_parts.m_200_ok.size();
+	size_of_full_message += 1; //end line
+	size_of_full_message += m_http_header_parts.m_server_name.size();
+	size_of_full_message += 1; //end line
+
+	if (keep_alive) {
+		size_of_full_message += m_http_header_parts.m_connection_keep_alive.size();
+		size_of_full_message += 1; //end line
+		size_of_full_message += m_http_header_parts.m_keep_alive_header_default.size();
+		size_of_full_message += 1; //end line
+	}
+	else {
+		size_of_full_message += m_http_header_parts.m_connection_close.size();
+		size_of_full_message += 1; //end line
+	}
+
+	size_of_full_message += m_http_header_parts.m_content_type_empty.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += content_type.size();
+	size_of_full_message += 1; //end line
+	size_of_full_message += m_http_header_parts.m_content_length_empty.size();
+	size_of_full_message += 1; //space
+	size_of_full_message += std::to_string(file_contents.size()).size();
+	size_of_full_message += 2; //two end lines
+	size_of_full_message += file_contents.size();
+
+	response.reserve(size_of_full_message);
+
+	response += m_http_header_parts.m_http_version;
+	response += ' ';
+	response += m_http_header_parts.m_200_ok;
+	response += '\n';
+	response += m_http_header_parts.m_server_name;
+	response += '\n';
+
+	if (keep_alive) {
+		response += m_http_header_parts.m_connection_keep_alive;
+		response += '\n';
+		response += m_http_header_parts.m_keep_alive_header_default;
+		response += '\n'; //end line
+	}
+	else {
+		response += m_http_header_parts.m_connection_close;
+		response += '\n';
+	}
+
+	response += m_http_header_parts.m_content_type_empty;
+	response += ' ';
+	response += content_type;
+	response += '\n';
+	response += m_http_header_parts.m_content_length_empty;
+	response += ' ';
+	response += std::to_string(file_contents.size());
+	response += "\n\n";
+	response += file_contents;
+}
+
+
+
+void HttpServer::DecodePostData(std::unordered_map<std::string, std::string>& decoded_data, std::string_view& request) {
+
+
+	int post_data_start = request.find_first_of("\r\n\r\n");
+
+	//unable to find post data... malformed msg maybe or no data
+	if (post_data_start == std::string::npos) {
+
+		std::scoped_lock lock(m_console_mutex);
+		std::cout << "POST data seems to be malformed\n";
+
+		return;
+	}
+
+	//two spaces
+	post_data_start += 2;
+
+	std::string key;
+	std::string value;
+
+	bool on_key = false; // keep track if we are on key or value
+
+
+	//to do: optimize the strings so reallocation and copy for data does not happen as much
+	for (int i = post_data_start; i < request.size(); ++i) {
+
+		if (request[i] == '&') {
+
+			if (!key.empty() && !value.empty()) {
+
+				decoded_data[key] = std::move(value);
+				key.clear();
+				value.clear();
+			}
+			on_key = false;
+		}
+		else if (request[i] == '=') {
+			on_key = !on_key;
+		}
+		else if (request[i] == '+') {
+
+			if (on_key) {
+				key.push_back(' ');
+			}
+			else {
+				value.push_back(' ');
+			}
+		}
+		else if (request[i] == '%') {
+
+			if (i + 2 < request.size()) {
+
+				std::string lookup;
+				lookup.push_back(request[i]);
+				lookup.push_back(request[i + 1]);
+				lookup.push_back(request[i + 2]);
+
+				if (m_uri_map.find(lookup) == m_uri_map.end()) {
+					std::scoped_lock lock(m_console_mutex);
+					std::cout << "percent encoding table did not contain " << lookup << " please add it\n";
+				}
+				else if (on_key) {
+					key.push_back(m_uri_map[lookup]);
+				}
+				else {
+					value.push_back(m_uri_map[lookup]);
+				}
+				
+				i += 2;
+			}
+		}
+		else {
+
+			if (on_key) {
+				key.push_back(request[i]);
+			}
+			else {
+				value.push_back(request[i]);
+			}
+		}
 	}
 }
