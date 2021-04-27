@@ -9,12 +9,12 @@
 #include <unordered_set>
 
 #include <WinSock2.h>
+#include <WS2tcpip.h>
 
 #include "thread_pool.h"
 #include "server_statistics.h"
 #include "http_response_components.h"
-
-class ThreadPool;
+#include "server_logging.h"
 
 class HttpServer {
 public:
@@ -86,6 +86,8 @@ private:
 	SOCKET m_listen_socket;
 	
 	ServerStatistics m_server_statistics;
+
+	ServerLogging m_log;
 
 	HttpResponseComponents m_http_header_parts;
 

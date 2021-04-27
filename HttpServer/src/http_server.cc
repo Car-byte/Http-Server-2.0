@@ -273,6 +273,11 @@ void HttpServer::ParseRequest(SOCKET request_socket) {
 		//fulfill request
 		SendToProperMethodFunction(http_response, http_request_view, !request_ended);
 
+		{
+			std::scoped_lock lock(m_console_mutex);
+			std::cout << http_request << "\n";
+		}
+
 
 
 		//set socket to blocking for send
@@ -579,11 +584,13 @@ int HttpServer::ReadFile(std::string& file_contents, const std::string& file_pat
 			return 500;
 		}
 
+		//put check on file size
 		file_contents = std::move(std::string(std::istreambuf_iterator<char>(file_404), std::istreambuf_iterator<char>()));
 
 		return 404;
 	}
 
+	//put check on file size
 	file_contents = std::move(std::string(std::istreambuf_iterator<char>(requested_file), std::istreambuf_iterator<char>()));
 
 	return 200;
